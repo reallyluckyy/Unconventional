@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdexcept>
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <array>
@@ -39,20 +41,18 @@ namespace Unconventional
 		{
 		}
 
-		/* TODO:
-		 * Make sure a Register can not be specified more than once as a parameter location.
-		 * Same goes with overlapping registers.
-		 * Ideally we'd want to be able to do this at compile time, but I don't think we can.
-		 */
-
-		FunctionSignature(Location returnValueLocation, std::array<Location, sizeof...(ArgumentTypes)> parameterLocations, const CallingConvention callingConvention = CallingConvention::CDECL)
-			: callingConvention(callingConvention), returnValueLocation(returnValueLocation), argumentLocations(parameterLocations)
+		FunctionSignature(Location returnValueLocation, std::array<Location, sizeof...(ArgumentTypes)> argumentLocations, const CallingConvention callingConvention = CallingConvention::CDECL)
+			: callingConvention(callingConvention), returnValueLocation(returnValueLocation), argumentLocations(argumentLocations)
 		{
+			VerifyReturnValueLocation();
+			VerifyArgumentLocations();
 		}
 
 		FunctionSignature(std::array<Location, sizeof...(ArgumentTypes)> argumentLocations, const CallingConvention callingConvention = CallingConvention::CDECL)
 			: callingConvention(callingConvention), returnValueLocation(), argumentLocations(argumentLocations)
 		{
+			VerifyReturnValueLocation();
+			VerifyArgumentLocations();
 		}
 
 		Location GetReturnValueLocation() const
@@ -89,7 +89,7 @@ namespace Unconventional
 		int32_t GetArgumentIndexForRegister(Location location)
 		{
 			if (location == Location::STACK)
-				throw std::exception("Location passed to GetArgumentIndexForRegister was Location::STACK");
+				throw std::invalid_argument("Location passed to GetArgumentIndexForRegister was Location::STACK");
 
 			for (int32_t i = 0; i < (int32_t)sizeof...(ArgumentTypes); i++)
 			{
@@ -105,7 +105,7 @@ namespace Unconventional
 		bool HasArgumentInRegister(Location location)
 		{
 			if (location == Location::STACK)
-				throw std::exception("Location passed to HasArgumentInRegister was Location::STACK");
+				throw std::invalid_argument("Location passed to HasArgumentInRegister was Location::STACK");
 
 			return this->GetArgumentIndexForRegister(location) != -1;
 		}
@@ -126,6 +126,49 @@ namespace Unconventional
 					return Location::EAX;
 			default:
 				throw std::exception("Not implemented");
+			}
+		}
+
+		void VerifyReturnValueLocation()
+		{
+			if (returnValueLocation.has_value() && returnValueLocation == Location::STACK)
+				throw std::invalid_argument("Return value location can not be stack");
+
+		}
+
+		void VerifyArgumentLocations()
+		{
+			auto AreArgumentLocationsIncompatible = [](Location x, Location y)
+			{
+				switch (x)
+				{
+				case Location::EAX:
+					return y == Location::AH || y == Location::AL;
+				case Location::EBX:
+					return y == Location::BH || y == Location::BL;
+				case Location::ECX:
+					return y == Location::CH || y == Location::CL;
+				case Location::EDX:
+					return y == Location::DH || y == Location::DL;
+				case Location::ESI:
+					return y == Location::SIL;
+				case Location::EDI:
+					return y == Location::DIL;
+				default: 
+					return false;
+				}
+			};
+
+			for (uint32_t i = 0; i < argumentLocations.size(); i++)
+			{
+				for (uint32_t j = 0; j < argumentLocations.size(); j++)
+				{
+					if (argumentLocations[i] == argumentLocations[j] && i != j)
+						throw std::invalid_argument("An argument location was specified more than once");
+
+					if (AreArgumentLocationsIncompatible(argumentLocations[i], argumentLocations[j]))
+						throw std::invalid_argument("Invalid combination of argument locations used");
+				}
 			}
 		}
 	};
@@ -316,7 +359,6 @@ namespace Unconventional
 				return (ReturnType)st7Value;
 
 			case Location::STACK:
-				// Can it?
 				throw std::exception("Return value cannot be on stack");
 			default:
 				throw std::exception("Not implemented");

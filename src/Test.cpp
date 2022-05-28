@@ -179,11 +179,39 @@ void RunFloatingPointTests()
 	assert(abs(floatSubtract_ArgumentsMixed.Call(5, 3) - 2.0f) < 0.001f);
 }
 
+void RunErrorTests()
+{
+	try 
+	{
+		auto function1 = Unconventional::Function<void, int32_t, int32_t>(0x0, {
+			{Unconventional::Location::EAX, Unconventional::Location::EAX}
+			});
+
+		assert(false);
+	}
+	catch (std::invalid_argument)
+	{
+	}
+
+	try
+	{
+		auto function2 = Unconventional::Function<void, int32_t, int32_t>(0x0, {
+			{Unconventional::Location::AL, Unconventional::Location::EAX}
+			});
+
+		assert(false);
+	}
+	catch (std::invalid_argument)
+	{
+	}
+}
+
 int main()
 {
 	RunIntegerTests();
 	RunByteTests();
 	RunFloatingPointTests();
+	RunErrorTests();
 
 	return 0;
 }

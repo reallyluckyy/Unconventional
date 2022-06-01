@@ -1,6 +1,6 @@
 #include <cassert>
 
-#include "Unconventional.hpp"
+#include "../Unconventional.hpp"
 
 // We have to use naked functions here as we need to be sure what this compiles to,
 // as we need to specify the opcode size later for hooking

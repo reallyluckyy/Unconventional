@@ -53,9 +53,10 @@
     <ClInclude Include="src\Unconventional_CompileTime.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\FunctionCallingTests.cpp" />
-    <ClCompile Include="src\HookingTests.cpp" />
-    <ClCompile Include="src\Test.cpp" />
+    <ClCompile Include="src\Tests\Benchmark.cpp" />
+    <ClCompile Include="src\Tests\FunctionCallingTests.cpp" />
+    <ClCompile Include="src\Tests\HookingTests.cpp" />
+    <ClCompile Include="src\Tests\Test.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

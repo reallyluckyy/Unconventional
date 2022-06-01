@@ -1,6 +1,6 @@
 #include <cassert>
 
-#include "Unconventional.hpp"
+#include "../Unconventional.hpp"
 
 namespace IntegerSubtractionTests
 {

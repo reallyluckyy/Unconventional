@@ -1,3 +1,4 @@
+#include "Test.hpp"
 
 void RunFunctionCallingTests();
 void RunHookingTests();

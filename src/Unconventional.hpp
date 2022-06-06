@@ -3,13 +3,10 @@
 #include <stdexcept>
 #include <functional>
 #include <cstdint>
-#include <optional>
 #include <array>
 #include <vector>
-#include <any>
 
 #include <Windows.h>
-
 
 namespace Unconventional
 {
@@ -17,46 +14,22 @@ namespace Unconventional
 	{
 		Stack,
 		EAX, EBX, ECX, EDX, ESI, EDI,
-		AH, AL, BH, BL, CH, CL, DH, DL, SIL, DIL,
-		ST0, ST1, ST2, ST3, ST4, ST5, ST6, ST7
-
-		// TODO: Support 16-bit registers
-		// TODO: Support XMM registers
+		// TODO: AH, AL, BH, BL, CH, CL, DH, DL, SIL, DIL,
+		ST0
 	};
 
-	class CallingConvention
+	enum class CallingConvention
 	{
-	public:
-		enum Convention
-		{
-			Cdecl
-		};
+		Cdecl
+	};
 
-		CallingConvention(Convention value = Cdecl) : value(value)
+	namespace CallingConventionUtils
+	{
+		constexpr bool SpecifiesCallerCleanup(const CallingConvention convention)
 		{
-		}
-
-		Convention GetValue() const { return value; }
-
-		Location GetReturnValueLocation(const bool isFloatingPointValue) const
-		{
-			switch (value)
+			switch (convention)
 			{
-			case Cdecl:
-				if (isFloatingPointValue)
-					return Location::ST0;
-				else
-					return Location::EAX;
-			default:
-				throw std::exception("Not implemented");
-			}
-		}
-
-		bool SpecifiesCallerCleanup() const
-		{
-			switch (value)
-			{
-			case Cdecl:
+			case CallingConvention::Cdecl:
 				return true;
 			default:
 				throw std::exception("Not implemented");
@@ -64,11 +37,7 @@ namespace Unconventional
 
 			return false;
 		}
-
-	private:
-
-		Convention value;
-	};
+	}
 
 	namespace Utils
 	{
@@ -83,72 +52,68 @@ namespace Unconventional
 		}
 	}
 
-	template<typename ReturnType, typename... ArgumentTypes>
+	// TODO: Make these optional
+	template<CallingConvention callingConvention, Location returnValueLocation, Location... argumentLocations>
 	class FunctionSignature
 	{
 	public:
-		FunctionSignature(const CallingConvention callingConvention = CallingConvention::Cdecl) :
-			callingConvention(callingConvention), returnValueLocation(), argumentLocations(std::array<Location, sizeof...(ArgumentTypes)>())
-		{
-		}
 
-		FunctionSignature(Location returnValueLocation, const CallingConvention callingConvention = CallingConvention::Cdecl)
-			: callingConvention(callingConvention), returnValueLocation(returnValueLocation), argumentLocations(std::array<Location, sizeof...(ArgumentTypes)>())
-		{
-		}
-
-		FunctionSignature(Location returnValueLocation, std::array<Location, sizeof...(ArgumentTypes)> argumentLocations, const CallingConvention callingConvention = CallingConvention::Cdecl)
-			: callingConvention(callingConvention), returnValueLocation(returnValueLocation), argumentLocations(argumentLocations)
-		{
-			VerifyReturnValueLocation();
-			VerifyArgumentLocations();
-		}
-
-		FunctionSignature(std::array<Location, sizeof...(ArgumentTypes)> argumentLocations, const CallingConvention callingConvention = CallingConvention::Cdecl)
-			: callingConvention(callingConvention), returnValueLocation(), argumentLocations(argumentLocations)
-		{
-			VerifyReturnValueLocation();
-			VerifyArgumentLocations();
-		}
-
-		CallingConvention GetCallingConvention() const
+		static consteval CallingConvention GetCallingConvention()
 		{
 			return callingConvention;
 		}
 
-		Location GetReturnValueLocation() const
+		static consteval Location GetReturnValueLocation()
 		{
-			if (returnValueLocation.has_value())
-				return returnValueLocation.value();
-			return callingConvention.GetReturnValueLocation(std::is_floating_point<ReturnType>());
+			static_assert(returnValueLocation != Location::Stack, "Return value location can not be stack");
+
+			return returnValueLocation;
 		}
 
-		std::array<Location, sizeof...(ArgumentTypes)> GetArgumentLocations()
+		static consteval std::array<Location, sizeof...(argumentLocations)> GetArgumentLocations()
 		{
-			return argumentLocations;
+			// TODO: static_assert that argument locations are not overlapping
+
+			return std::array<Location, sizeof...(argumentLocations)>({ argumentLocations... });
 		}
 
-		std::vector<int32_t> GetStackArgumentIndices()
+		static consteval uint32_t GetStackArgumentCount()
 		{
-			std::vector<int32_t> indices;
-			for (int32_t i = 0; i < (int32_t)sizeof...(ArgumentTypes); i++)
+			uint32_t count = 0;
+			for (int32_t i = 0; i < (int32_t)sizeof...(argumentLocations); i++)
 			{
-				if (argumentLocations[i] == Location::Stack)
+				constexpr auto argumentLocationsArray = GetArgumentLocations();
+				if (argumentLocationsArray[i] == Location::Stack)
+					count++;
+			}
+			return count;
+		}
+
+		static consteval std::array<int32_t, GetStackArgumentCount()> GetStackArgumentIndices()
+		{
+			std::array<int32_t, GetStackArgumentCount()> indices{};
+			uint32_t writeIndex = 0;
+			for (int32_t i = 0; i < (int32_t)sizeof...(argumentLocations); i++)
+			{
+				constexpr auto argumentLocationsArray = GetArgumentLocations();
+				if (argumentLocationsArray[i] == Location::Stack)
 				{
-					indices.push_back(i);
+					indices[writeIndex++] = i;
 				}
 			}
 			return indices;
 		}
 
-		int32_t GetArgumentIndexForRegister(Location location)
+		static consteval int32_t GetArgumentIndexForRegister(Location location)
 		{
 			if (location == Location::Stack)
-				throw std::invalid_argument("Location passed to GetArgumentIndexForRegister was Location::Stack");
+				throw std::invalid_argument("Location passed to GetArgumentIndexForRegister can not be Location::Stack");
 
-			for (int32_t i = 0; i < (int32_t)sizeof...(ArgumentTypes); i++)
+			
+			constexpr auto argumentLocationsArray = GetArgumentLocations();
+			for (int32_t i = 0; i < (int32_t)sizeof...(argumentLocations); i++)
 			{
-				if (argumentLocations[i] == location)
+				if (argumentLocationsArray[i] == location)
 				{
 					return i;
 				}
@@ -157,267 +122,161 @@ namespace Unconventional
 			return -1;
 		}
 
-		bool HasArgumentInRegister(Location location)
+		static consteval bool HasArgumentInRegister(Location location)
 		{
 			if (location == Location::Stack)
-				throw std::invalid_argument("Location passed to HasArgumentInRegister was Location::Stack");
+				throw std::invalid_argument("Location passed to HasArgumentInRegister can not be Location::Stack");
 
-			return this->GetArgumentIndexForRegister(location) != -1;
+			return GetArgumentIndexForRegister(location) != -1;
 		}
-
-	private:
-		CallingConvention callingConvention;
-		std::optional<Location> returnValueLocation;
-		std::array<Location, sizeof...(ArgumentTypes)> argumentLocations;
-
-		void VerifyReturnValueLocation()
-		{
-			if (returnValueLocation.has_value() && returnValueLocation == Location::Stack)
-				throw std::invalid_argument("Return value location can not be stack");
-		}
-
-		void VerifyArgumentLocations()
-		{
-			auto AreArgumentLocationsIncompatible = [](Location x, Location y)
-			{
-				switch (x)
-				{
-				case Location::EAX:
-					return y == Location::AH || y == Location::AL;
-				case Location::EBX:
-					return y == Location::BH || y == Location::BL;
-				case Location::ECX:
-					return y == Location::CH || y == Location::CL;
-				case Location::EDX:
-					return y == Location::DH || y == Location::DL;
-				case Location::ESI:
-					return y == Location::SIL;
-				case Location::EDI:
-					return y == Location::DIL;
-				default: 
-					return false;
-				}
-			};
-
-			for (uint32_t i = 0; i < argumentLocations.size(); i++)
-			{
-				for (uint32_t j = 0; j < argumentLocations.size(); j++)
-				{
-					if (argumentLocations[i] == argumentLocations[j] && i != j)
-						throw std::invalid_argument("An argument location was specified more than once");
-
-					if (AreArgumentLocationsIncompatible(argumentLocations[i], argumentLocations[j]))
-						throw std::invalid_argument("Invalid combination of argument locations used");
-				}
-			}
-		}
+		
 	};
 
-	template<typename ReturnType, typename... ArgumentTypes>
+	template<typename Signature, typename ReturnType, typename... ArgumentTypes>
 	class Function
 	{
 	public:
-		Function() : address(0x0), signature(FunctionSignature<ReturnType, ArgumentTypes...>())
-		{
-		}
 
-		Function(const uintptr_t address, const FunctionSignature<ReturnType, ArgumentTypes...> signature) : address(address), signature(signature) {}
+		Function(uintptr_t address) : address(address)
+		{
+			static_assert(sizeof(uint32_t) == 4);
+			static_assert(sizeof(uint16_t) == 2);
+			static_assert(sizeof(uint8_t) == 1);
+		}
 
 		uintptr_t GetAddress() const { return address; }
 
-		FunctionSignature<ReturnType, ArgumentTypes...> GetSignature() { return signature; };
-
-		// TODO: This does not support doubles currently
 		ReturnType Call(ArgumentTypes... arguments)
 		{
 			constexpr uint32_t argumentCount = sizeof...(arguments);
-			std::array<std::uint32_t, argumentCount> integerArguments = { *(std::uint32_t*)&arguments... };
-			std::array<std::any, argumentCount> anyArguments = { arguments... };
+			static_assert(Signature::GetArgumentLocations().size() == argumentCount, "Amount of argument locations does not match number of function arguments");
+			
+			uint32_t integerArguments[argumentCount] { *(std::uint32_t*)&arguments... };
 
+			uintptr_t functionAddress = address;
 
-			std::vector<int32_t> stackArgumentIndices = signature.GetStackArgumentIndices();
-
-			// Prepare FPU Stack Arguments
-
-			std::vector<int32_t> fpuStackArgumentIndices;
-			std::uint32_t fpuStackArgumentsReadIndex = 0;
-			auto iterator = stackArgumentIndices.begin();
-			while (iterator != stackArgumentIndices.end())
-			{
-				if (anyArguments[*iterator].type() == typeid(float))
-				{
-					fpuStackArgumentIndices.insert(fpuStackArgumentIndices.begin(), *iterator);
-					iterator = stackArgumentIndices.erase(iterator);
-				}
-				else
-				{
-					++iterator;
-				}
-			}
-
-			auto GetValueForFPURegister = [&](Location location) -> float
-			{
-				if (signature.HasArgumentInRegister(location))
-					return *(float*)&integerArguments[signature.GetArgumentIndexForRegister(location)];
-				else
-					return fpuStackArgumentsReadIndex < fpuStackArgumentIndices.size() ? * (float*)&integerArguments[fpuStackArgumentIndices[fpuStackArgumentsReadIndex++]] : 0;
-			};
+			// TODO: Prepare FPU Stack Arguments if needed. For now, floating point arguments are passed on the (regular) stack.
 
 			// Prepare Stack Arguments
+			
+			constexpr uint32_t stackArgumentCount = Signature::GetStackArgumentCount();
+			constexpr std::array<int32_t, stackArgumentCount> stackArgumentIndices = Signature::GetStackArgumentIndices();
+			constexpr auto byteSizeOfStackArguments = stackArgumentCount * 4;
+			
+			__asm pushad
 
-			uint32_t stackArgumentCount = stackArgumentIndices.size();
-			auto byteSizeOfStackArguments = stackArgumentCount * 4;
-
-			auto argumentCleanupByteSize = signature.GetCallingConvention().SpecifiesCallerCleanup() ? byteSizeOfStackArguments : 0;
-
-			auto stackArguments = (uint8_t*)malloc(byteSizeOfStackArguments);
-			uint32_t stackArgumentsWriteIndex = 0;
-			for (auto index : stackArgumentIndices)
+			// TODO: Turn this into assembly
+			for (uint32_t i = stackArgumentCount; i > 0; --i)
 			{
-				*(uint32_t*)(stackArguments + stackArgumentsWriteIndex) = integerArguments[index];
-				stackArgumentsWriteIndex += 4;
+				uint32_t stackArgument = integerArguments[stackArgumentIndices[i - 1]];
+				__asm
+				{
+					push stackArgument
+				}
 			}
 
 			// Prepare Register Values
 
-			auto GetValueForRegister = [&](Location location) -> uint32_t
+			static_assert(!Signature::HasArgumentInRegister(Location::ST0), "Arguments in FPU registers are currently not supported");
+
+			if constexpr (Signature::HasArgumentInRegister(Location::EAX))
 			{
-				if (signature.HasArgumentInRegister(location))
-					return integerArguments[signature.GetArgumentIndexForRegister(location)];
-				else
-					return 0;
-			};
+				constexpr auto argumentOffset = Signature::GetArgumentIndexForRegister(Location::EAX) * sizeof(uint32_t);
+				__asm
+				{
+					lea eax, integerArguments
+					add eax, argumentOffset
+					mov eax, [eax]
+				}
+			}
 
-			uint32_t eaxValue = GetValueForRegister(Location::EAX) | GetValueForRegister(Location::AL) | GetValueForRegister(Location::AH) << 8;
-			uint32_t ebxValue = GetValueForRegister(Location::EBX) | GetValueForRegister(Location::BL) | GetValueForRegister(Location::BH) << 8;
-			uint32_t ecxValue = GetValueForRegister(Location::ECX) | GetValueForRegister(Location::CL) | GetValueForRegister(Location::CH) << 8;
-			uint32_t edxValue = GetValueForRegister(Location::EDX) | GetValueForRegister(Location::DL) | GetValueForRegister(Location::DH) << 8;
-			uint32_t esiValue = GetValueForRegister(Location::ESI) | GetValueForRegister(Location::SIL);
-			uint32_t ediValue = GetValueForRegister(Location::EDI) | GetValueForRegister(Location::DIL);
+			if constexpr (Signature::HasArgumentInRegister(Location::EBX))
+			{
+				constexpr auto argumentOffset = Signature::GetArgumentIndexForRegister(Location::EBX) * sizeof(uint32_t);
+				__asm
+				{
+					lea ebx, integerArguments
+					add ebx, argumentOffset
+					mov ebx, [ebx]
+				}
+			}
 
-			float st0Value = GetValueForFPURegister(Location::ST0);
-			float st1Value = GetValueForFPURegister(Location::ST1);
-			float st2Value = GetValueForFPURegister(Location::ST2);
-			float st3Value = GetValueForFPURegister(Location::ST3);
-			float st4Value = GetValueForFPURegister(Location::ST4);
-			float st5Value = GetValueForFPURegister(Location::ST5);
-			float st6Value = GetValueForFPURegister(Location::ST6);
-			float st7Value = GetValueForFPURegister(Location::ST7);
+			if constexpr (Signature::HasArgumentInRegister(Location::ECX))
+			{
+				constexpr auto argumentOffset = Signature::GetArgumentIndexForRegister(Location::ECX) * sizeof(uint32_t);
+				__asm
+				{
+					lea ecx, integerArguments
+					add ecx, argumentOffset
+					mov ecx, [ecx]
+				}
+			}
 
-			auto stackArgumentsPointer = (uintptr_t)stackArguments;
-			auto functionAddress = this->address;
-			__asm {
-				pushad
+			if constexpr (Signature::HasArgumentInRegister(Location::EDX))
+			{
+				constexpr auto argumentOffset = Signature::GetArgumentIndexForRegister(Location::EDX) * sizeof(uint32_t);
+				__asm
+				{
+					lea edx, integerArguments
+					add edx, argumentOffset
+					mov edx, [edx]
+				}
+			}
 
-				sub esp, byteSizeOfStackArguments
-				mov ecx, stackArgumentCount
-				mov esi, stackArgumentsPointer
-				mov edi, esp
-				rep movsd
+			if constexpr (Signature::HasArgumentInRegister(Location::ESI))
+			{
+				constexpr auto argumentOffset = Signature::GetArgumentIndexForRegister(Location::ESI) * sizeof(uint32_t);
+				__asm
+				{
+					lea esi, integerArguments
+					add esi, argumentOffset
+					mov esi, [esi]
+				}
+			}
 
-				mov eax, eaxValue
-				mov ebx, ebxValue
-				mov ecx, ecxValue
-				mov edx, edxValue
-				mov esi, esiValue
-				mov edi, ediValue
-				fld st7Value
-				fld st6Value
-				fld st5Value
-				fld st4Value
-				fld st3Value
-				fld st2Value
-				fld st1Value
-				fld st0Value
+			if constexpr (Signature::HasArgumentInRegister(Location::EDI))
+			{
+				constexpr auto argumentOffset = Signature::GetArgumentIndexForRegister(Location::EDI) * sizeof(uint32_t);
+				__asm
+				{
+					lea edi, integerArguments
+					add edi, argumentOffset
+					mov edi, [edi]
+				}
+			}
 
+			__asm
+			{
 				call functionAddress
-				add esp, argumentCleanupByteSize
-
-				mov eaxValue, eax
-				mov ebxValue, ebx
-				mov ecxValue, ecx
-				mov edxValue, edx
-				mov esiValue, esi
-				mov ediValue, edi
-				fstp st0Value
-				fstp st1Value
-				fstp st2Value
-				fstp st3Value
-				fstp st4Value
-				fstp st5Value
-				fstp st6Value
-				fstp st7Value
-
-				popad
 			}
 
-			free(stackArguments);
-
-			switch(signature.GetReturnValueLocation())
+			if constexpr (CallingConventionUtils::SpecifiesCallerCleanup(Signature::GetCallingConvention()) && byteSizeOfStackArguments > 0)
 			{
-			case Location::EAX:
-				return *(ReturnType*)&eaxValue;
-			case Location::EBX:
-				return *(ReturnType*)&ebxValue;
-			case Location::ECX:
-				return *(ReturnType*)&ecxValue;
-			case Location::EDX:
-				return *(ReturnType*)&edxValue;
-			case Location::ESI:
-				return *(ReturnType*)&esiValue;
-			case Location::EDI:
-				return *(ReturnType*)&ediValue;
-
-			case Location::AL:
-				return (ReturnType)Utils::GetLowByte(eaxValue);
-			case Location::AH:
-				return (ReturnType)Utils::GetHighByte(eaxValue);
-			case Location::BL:
-				return (ReturnType)Utils::GetLowByte(ebxValue);
-			case Location::BH:
-				return (ReturnType)Utils::GetHighByte(ebxValue);
-			case Location::CL:
-				return (ReturnType)Utils::GetLowByte(ecxValue);
-			case Location::CH:
-				return (ReturnType)Utils::GetHighByte(ecxValue);
-			case Location::DL:
-				return (ReturnType)Utils::GetLowByte(edxValue);
-			case Location::DH:
-				return (ReturnType)Utils::GetHighByte(edxValue);
-			case Location::SIL:
-				return (ReturnType)Utils::GetLowByte(esiValue);
-			case Location::DIL:
-				return (ReturnType)Utils::GetLowByte(ediValue);
-
-			case Location::ST0:
-				return (ReturnType)st0Value;
-			case Location::ST1:
-				return (ReturnType)st1Value;
-			case Location::ST2:
-				return (ReturnType)st2Value;
-			case Location::ST3:
-				return (ReturnType)st3Value;
-			case Location::ST4:
-				return (ReturnType)st4Value;
-			case Location::ST5:
-				return (ReturnType)st5Value;
-			case Location::ST6:
-				return (ReturnType)st6Value;
-			case Location::ST7:
-				return (ReturnType)st7Value;
-
-			case Location::Stack:
-				throw std::exception("Return value cannot be on stack");
-			default:
-				throw std::exception("Not implemented");
+				__asm add esp, byteSizeOfStackArguments
 			}
+
+			uint32_t returnValue;
+			if constexpr (Signature::GetReturnValueLocation() == Location::EAX)
+			{
+				__asm mov returnValue, eax
+			}
+
+			if constexpr (Signature::GetReturnValueLocation() == Location::ST0)
+			{
+				__asm fstp returnValue
+			}
+
+			__asm popad
+
+			return *(ReturnType*)&returnValue;
 		}
+
 	private:
 		uintptr_t address;
-		FunctionSignature<ReturnType, ArgumentTypes...> signature;
 	};
+
 	
-	template<typename ReturnType, typename... ArgumentTypes>
+	template<typename Signature, typename ReturnType, typename... ArgumentTypes>
 	class Hook
 	{
 	public:
@@ -451,18 +310,18 @@ namespace Unconventional
 
 		ReturnType CallOriginalFunction(ArgumentTypes... arguments)
 		{
-			Function<ReturnType, ArgumentTypes...> trampolineFunction(trampolineAddress, originalFunction.GetSignature());
+			Function<Signature, ReturnType, ArgumentTypes...> trampolineFunction(trampolineAddress);
 			return trampolineFunction.Call(arguments...);
 		}
 
-		Hook() : isInitialized(false), isInstalled(false), opCodeSize(0), originalFunction(Function<ReturnType, ArgumentTypes...>()), userHookFunctionAddress(0),
+		Hook() : isInitialized(false), isInstalled(false), opCodeSize(0), originalFunction(0), userHookFunctionAddress(0),
 		         trampolineAddress(0),
 		         hookWrapperAddress(0),
 		         tempStorage{}
 		{
 		}
 
-		Hook(Function<ReturnType, ArgumentTypes...> originalFunction, uintptr_t hookFunctionAddress, const uint8_t opCodeSize)
+		Hook(Function<Signature, ReturnType, ArgumentTypes...> originalFunction, uintptr_t hookFunctionAddress, const uint8_t opCodeSize)
 			: isInstalled(false), opCodeSize(opCodeSize), originalFunction(originalFunction), userHookFunctionAddress(hookFunctionAddress), trampolineAddress(0), hookWrapperAddress(0)
 		{
 			if (opCodeSize < 5)
@@ -492,7 +351,7 @@ namespace Unconventional
 		bool isInstalled;
 
 		uint8_t opCodeSize;
-		Function<ReturnType, ArgumentTypes...> originalFunction;
+		Function<Signature, ReturnType, ArgumentTypes...> originalFunction;
 		uintptr_t userHookFunctionAddress;
 
 		uintptr_t trampolineAddress;
@@ -543,7 +402,7 @@ namespace Unconventional
 				hookWrapperBytes.push_back(Utils::GetHighByte(address >> 16));
 			}
 
-			const uint32_t stackArgumentCount = originalFunction.GetSignature().GetStackArgumentIndices().size();
+			const uint32_t stackArgumentCount = Signature::GetStackArgumentIndices().size();
 			for (uint32_t i = 0; i < stackArgumentCount; i++)
 			{
 				// Write pop to local storage location
@@ -561,7 +420,7 @@ namespace Unconventional
 			hookWrapperBytes.push_back(0x60);
 
 			// Write a push for each argument
-			auto argumentLocations = originalFunction.GetSignature().GetArgumentLocations();
+			auto argumentLocations = Signature::GetArgumentLocations();
 			std::reverse(argumentLocations.begin(), argumentLocations.end());
 			uint32_t stackWriteIndex = 0;
 			for (const Location location : argumentLocations)
@@ -629,10 +488,10 @@ namespace Unconventional
 
 			// Put return value where it needs to go
 			// We sort of assume the user's hook function itself to be CDECL
-			auto returnValueLocation = CallingConvention(CallingConvention::Convention::Cdecl).GetReturnValueLocation(std::is_floating_point<ReturnType>());
+			auto returnValueLocation = std::is_floating_point<ReturnType>() ? Location::ST0 : Location::EAX;
 			if (returnValueLocation == Location::EAX)
 			{
-				switch (originalFunction.GetSignature().GetReturnValueLocation())
+				switch (Signature::GetReturnValueLocation())
 				{
 				case Location::EAX:
 					hookWrapperBytes.push_back(0xA1);
@@ -671,7 +530,7 @@ namespace Unconventional
 				// Pop all registers
 				hookWrapperBytes.push_back(0x61);
 
-				switch (originalFunction.GetSignature().GetReturnValueLocation())
+				switch (Signature::GetReturnValueLocation())
 				{
 				case Location::ST0:
 					break;
@@ -712,4 +571,5 @@ namespace Unconventional
 		}
 		
 	};
+	
 }

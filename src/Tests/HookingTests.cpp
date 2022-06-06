@@ -59,7 +59,7 @@ namespace BasicRedirectionTests
 		int expectedOriginalResult = parameter1 - parameter2;
 
 		{
-			Function<int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsStackOnly, {});
+			Function<FunctionSignature<CallingConvention::Cdecl, Location::EAX, Location::Stack, Location::Stack>, int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsStackOnly);
 			Hook hook(function, (uintptr_t)&Subtract_Hook, 8);
 			hook.Install();
 			
@@ -87,7 +87,7 @@ namespace BasicRedirectionTests
 		}
 
 		{
-			Function<int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsRegistersOnly, { {Location::EAX, Location::EBX} });
+			Function<FunctionSignature<CallingConvention::Cdecl, Location::EAX, Location::EAX, Location::EBX>, int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsRegistersOnly);
 			Hook hook(function, (uintptr_t)&Subtract_Hook, 5);
 			hook.Install();
 
@@ -113,7 +113,7 @@ namespace BasicRedirectionTests
 		}
 
 		{
-			Function<int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsMixed, { {Location::EAX, Location::Stack} });
+			Function<FunctionSignature<CallingConvention::Cdecl, Location::EAX, Location::EAX, Location::Stack>, int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsMixed);
 			Hook hook(function, (uintptr_t)&Subtract_Hook, 5);
 			hook.Install();
 
@@ -144,16 +144,29 @@ namespace BasicRedirectionTests
 
 namespace TrampolineTests
 {
-	Unconventional::Hook<int32_t, int32_t, int32_t> hook;
+	using namespace Unconventional;
 
-	int32_t Subtract_Hook(int32_t a, int32_t b)
+
+	Hook<FunctionSignature<CallingConvention::Cdecl, Location::EAX, Location::Stack, Location::Stack>, int32_t, int32_t, int32_t> hook1;
+	int32_t Subtract_Hook1(int32_t a, int32_t b)
 	{
-		return hook.CallOriginalFunction(a, b) + 100;
+		return hook1.CallOriginalFunction(a, b) + 100;
+	}
+
+	Hook<FunctionSignature<CallingConvention::Cdecl, Location::EAX, Location::EAX, Location::EBX>, int32_t, int32_t, int32_t> hook2;
+	int32_t Subtract_Hook2(int32_t a, int32_t b)
+	{
+		return hook2.CallOriginalFunction(a, b) + 100;
+	}
+
+	Hook<FunctionSignature<CallingConvention::Cdecl, Location::EAX, Location::EAX, Location::Stack>, int32_t, int32_t, int32_t> hook3;
+	int32_t Subtract_Hook3(int32_t a, int32_t b)
+	{
+		return hook3.CallOriginalFunction(a, b) + 100;
 	}
 
 	void Run()
 	{
-		using namespace Unconventional;
 
 		int eaxValue = 0;
 
@@ -163,9 +176,9 @@ namespace TrampolineTests
 		constexpr int expectedHookResult = expectedOriginalResult + 100;
 
 		{
-			Function<int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsStackOnly, {});
-			hook = Hook(function, (uintptr_t)&Subtract_Hook, 8);
-			hook.Install();
+			Function<FunctionSignature<CallingConvention::Cdecl, Location::EAX, Location::Stack, Location::Stack>, int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsStackOnly);
+			hook1 = Hook(function, (uintptr_t)&Subtract_Hook1, 8);
+			hook1.Install();
 			
 			__asm
 			{
@@ -177,7 +190,7 @@ namespace TrampolineTests
 			}
 			assert(eaxValue == expectedHookResult);
 			
-			hook.Uninstall();
+			hook1.Uninstall();
 
 			__asm
 			{
@@ -191,10 +204,10 @@ namespace TrampolineTests
 		}
 
 		{
-			Function<int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsRegistersOnly, { {Location::EAX, Location::EBX} });
-			hook = Hook(function, (uintptr_t)&Subtract_Hook, 5);
-			hook.Install();
-
+			Function<FunctionSignature<CallingConvention::Cdecl, Location::EAX, Location::EAX, Location::EBX>, int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsRegistersOnly);
+			hook2 = Hook(function, (uintptr_t)&Subtract_Hook2, 5);
+			hook2.Install();
+		
 			__asm
 			{
 				mov ebx, parameter2
@@ -203,9 +216,9 @@ namespace TrampolineTests
 				mov eaxValue, eax
 			}
 			assert(eaxValue == expectedHookResult);
-
-			hook.Uninstall();
-
+		
+			hook2.Uninstall();
+		
 			__asm
 			{
 				mov ebx, parameter2
@@ -215,12 +228,12 @@ namespace TrampolineTests
 			}
 			assert(eaxValue == expectedOriginalResult);
 		}
-
+		
 		{
-			Function<int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsMixed, { {Location::EAX, Location::Stack} });
-			hook = Hook(function, (uintptr_t)&Subtract_Hook, 5);
-			hook.Install();
-
+			Function<FunctionSignature<CallingConvention::Cdecl, Location::EAX, Location::EAX, Location::Stack>, int32_t, int32_t, int32_t> function((uintptr_t)&Subtract_ArgumentsMixed);
+			hook3 = Hook(function, (uintptr_t)&Subtract_Hook3, 5);
+			hook3.Install();
+		
 			__asm
 			{
 				push parameter2
@@ -230,9 +243,9 @@ namespace TrampolineTests
 				mov eaxValue, eax
 			}
 			assert(eaxValue == expectedHookResult);
-
-			hook.Uninstall();
-
+		
+			hook3.Uninstall();
+		
 			__asm
 			{
 				push parameter2

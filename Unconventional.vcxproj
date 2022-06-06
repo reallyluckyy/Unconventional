@@ -41,6 +41,8 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <Optimization>Disabled</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -49,8 +51,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="src\Tests\Test.hpp" />
     <ClInclude Include="src\Unconventional.hpp" />
-    <ClInclude Include="src\Unconventional_CompileTime.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\Tests\Benchmark.cpp" />
